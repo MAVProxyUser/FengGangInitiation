@@ -1,7 +1,11 @@
 # FengGangInitiation
-Learning to see my Baofeng UV-32, DM-32UV, Tidradio TD-H8, &amp; Radtel RT-4D radios with gnuradio
+Learning to observe, and record various mainstream Chinese radios via Gnuradio. I suck at Gnuradio, so decided to have ChatGPT help me through some random concepts. 
 
-I suck at Gnuradio, so decided to have ChatGPT help me through some random concepts. 
+Handsets used for testing: 
+Baofeng UV-32 - https://www.amazon.com/dp/B0F1F6Q9RZ<br>
+Baofeng DM-32UV - https://www.amazon.com/dp/B0F1FBR4YJ<br>
+Tidradio TD-H8 - https://www.amazon.com/dp/B0C27VBC5J<br>
+Radtel RT-4D  - https://www.amazon.com/dp/B0DMF898GV<br>
 
 The first example simply raw records the frequency to a wav file. 
 ```
