@@ -11,6 +11,140 @@ index 8b779e1..e6cb961 100644
  
  rebuffer: sh_mem_util.c iq_header.c log.c ini.c rebuffer.c rtl_daq.h
  	$(CC) $(CFLAGS) sh_mem_util.o log.o ini.o iq_header.o -o rebuffer.out rebuffer.c -lrt -lm
+diff --git a/Firmware/_logs/logs b/Firmware/_logs/logs
+deleted file mode 100644
+index ade1a56..0000000
+--- a/Firmware/_logs/logs
++++ /dev/null
+@@ -1,8 +0,0 @@
+-Realtek data acquistion module : rtl_daq.log
+-Sample delay synchronizer      : sync.log
+-Sample rebuffer                : rebuffer.log
+-Squelch module                 : squelch.log
+-IQ sample decimator            : decimator.log
+-Delay synchronizer module      : delay_sync.log
+-IQ Server                      : iq_server.log
+-Hardware controller module     : hwc.log
+diff --git a/Firmware/daq_chain_config.ini b/Firmware/daq_chain_config.ini
+index 7c341ba..a8c4a12 100755
+--- a/Firmware/daq_chain_config.ini
++++ b/Firmware/daq_chain_config.ini
+@@ -51,5 +51,5 @@ adpis_proc_size = 8192
+ adpis_gains_init = 0,0,0,0,0
+ 
+ [data_interface]
+-out_data_iface_type = shmem
++out_data_iface_type = eth
+ 
+diff --git a/Firmware/daq_start_sm.sh b/Firmware/daq_start_sm.sh
+index 925440c..f9fe7c6 100755
+--- a/Firmware/daq_start_sm.sh
++++ b/Firmware/daq_start_sm.sh
+@@ -100,23 +100,23 @@ fi
+ 
+ # Start main program chain -Thread 0 Normal (non squelch mode)
+ echo "Starting DAQ Subsystem"
+-chrt -f 99 _daq_core/rtl_daq.out 2> _logs/rtl_daq.log | \
+-chrt -f 99 _daq_core/rebuffer.out 0 2> _logs/rebuffer.log &
++sudo chrt -f 99 _daq_core/rtl_daq.out 2> _logs/rtl_daq.log | \
++sudo chrt -f 99 _daq_core/rebuffer.out 0 2> _logs/rebuffer.log &
+ 
+ # Decimator - Thread 1
+-chrt -f 99 _daq_core/decimate.out 2> _logs/decimator.log &
++sudo chrt -f 99 _daq_core/decimate.out 2> _logs/decimator.log &
+ 
+ # Delay synchronizer - Thread 2
+-chrt -f 99 python3 _daq_core/delay_sync.py 2> _logs/delay_sync.log &
++sudo chrt -f 99 python3 _daq_core/delay_sync.py 2> _logs/delay_sync.log &
+ 
+ # Hardware Controller data path - Thread 3
+-chrt -f 99 sudo env "PATH=$PATH" python3 _daq_core/hw_controller.py 2> _logs/hwc.log &
++sudo chrt -f 99 sudo env "PATH=$PATH" python3 _daq_core/hw_controller.py 2> _logs/hwc.log &
+ # root priviliges are needed to drive the i2c master
+ 
+-if [ $out_data_iface_type = eth ]; then
++if [ "$out_data_iface_type" = "eth" ]; then
+     echo "Output data interface: IQ ethernet server"
+-    chrt -f 99 _daq_core/iq_server.out 2>_logs/iq_server.log &
+-elif [ $out_data_iface_type = shmem ]; then
++    sudo chrt -f 99 _daq_core/iq_server.out 2>_logs/iq_server.log &
++elif [ "$out_data_iface_type" = "shmem" ]; then
+     echo "Output data interface: Shared memory"
+ fi
+ 
+diff --git a/config_files/kerberos_default/daq_chain_config.ini b/config_files/kerberos_default/daq_chain_config.ini
+deleted file mode 100755
+index 6820bf6..0000000
+--- a/config_files/kerberos_default/daq_chain_config.ini
++++ /dev/null
+@@ -1,56 +0,0 @@
+-[meta]
+-ini_version = 7
+-config_name = kerberos_default
+-
+-[hw]
+-name = kraken5
+-unit_id = 0
+-ioo_type = 0
+-num_ch = 4
+-en_bias_tee = 0,0,0,0
+-
+-[daq]
+-log_level = 5
+-daq_buffer_size = 262144
+-center_freq = 700000000
+-sample_rate = 2400000
+-gain = 0
+-en_noise_source_ctr = 1
+-ctr_channel_serial_no = 1000
+-
+-[pre_processing]
+-cpi_size = 1048576
+-decimation_ratio = 1
+-fir_relative_bandwidth = 1.0
+-fir_tap_size = 1
+-fir_window = hann
+-en_filter_reset = 0
+-
+-[calibration]
+-corr_size = 65536
+-std_ch_ind = 0
+-en_iq_cal = 1
+-amplitude_cal_mode = channel_power
+-en_gain_tune_init = 0
+-gain_lock_interval = 0
+-unified_gain_control = 0
+-require_track_lock_intervention = 0
+-cal_track_mode = 0
+-cal_frame_interval = 687
+-cal_frame_burst_size = 10
+-amplitude_tolerance = 2
+-phase_tolerance = 1
+-maximum_sync_fails = 10
+-iq_adjust_source = explicit-time-delay
+-iq_adjust_amplitude = 0,0,0,0
+-iq_adjust_time_delay_ns = 0, 0, 0, 0
+-
+-
+-[adpis]
+-en_adpis = 0
+-adpis_proc_size = 8192
+-adpis_gains_init = 0,0,0,0
+-
+-[data_interface]
+-out_data_iface_type = shmem
+-
+diff --git a/config_files/kraken_default/daq_chain_config.ini b/config_files/kraken_default/daq_chain_config.ini
+index 7c341ba..a8c4a12 100755
+--- a/config_files/kraken_default/daq_chain_config.ini
++++ b/config_files/kraken_default/daq_chain_config.ini
+@@ -51,5 +51,5 @@ adpis_proc_size = 8192
+ adpis_gains_init = 0,0,0,0,0
+ 
+ [data_interface]
+-out_data_iface_type = shmem
++out_data_iface_type = eth
+ 
 diff --git a/util/install.sh b/util/install.sh
 index 18e81be..74c07d1 100755
 --- a/util/install.sh
