@@ -1,0 +1,162 @@
+diff --git a/Firmware/_daq_core/Makefile b/Firmware/_daq_core/Makefile
+index 8b779e1..e6cb961 100644
+--- a/Firmware/_daq_core/Makefile
++++ b/Firmware/_daq_core/Makefile
+@@ -28,7 +28,7 @@ daq_util:
+ 	$(CC) $(CFLAGS) -c -o sh_mem_util.o sh_mem_util.c
+ 
+ rtl_daq: iq_header.c log.c ini.c rtl_daq.c rtl_daq.h
+-	$(CC) $(CFLAGS) log.o ini.o iq_header.o -o rtl_daq.out rtl_daq.c -lpthread -lzmq $(PIGPIO) -L. -lrtlsdr -lusb-1.0
++	$(CC) $(CFLAGS) log.o ini.o iq_header.o -o rtl_daq.out rtl_daq.c -lpthread -lzmq $(PIGPIO) -L.  -Wl,-Bstatic -lrtlsdr -Wl,-Bdynamic -lusb-1.0
+ 
+ rebuffer: sh_mem_util.c iq_header.c log.c ini.c rebuffer.c rtl_daq.h
+ 	$(CC) $(CFLAGS) sh_mem_util.o log.o ini.o iq_header.o -o rebuffer.out rebuffer.c -lrt -lm
+diff --git a/util/install.sh b/util/install.sh
+index 18e81be..74c07d1 100755
+--- a/util/install.sh
++++ b/util/install.sh
+@@ -1,63 +1,84 @@
+-#!/bin/bash
+-echo "Installing dependencies and build HeIMDALL DAQ Firmware"
+-cd ..
+-cd ..
+-sudo apt install git
+-echo "6/1 Install build dependencies for the realtek driver"
+-sudo apt install cmake
+-sudo apt install libusb-1.0-0-dev
+-echo "6/2 Build and install rtl-sdr driver"
+-git clone https://github.com/krakenrf/librtlsdr
+-
+-cd librtlsdr
+-mkdir build
+-cd build
+-cmake ../ -DINSTALL_UDEV_RULES=ON
+-make
+-sudo make install
+-sudo cp ../rtl-sdr.rules /etc/udev/rules.d/
+-sudo ldconfig
+-cd ..
+-cd ..
+-
+-echo "6/3 Disable built-in rtl-sdr driver"
+-echo 'blacklist dvb_usb_rtl28xxu' | sudo tee --append /etc/modprobe.d/blacklist-dvb_usb_rtl28xxu.conf
+-echo "6/4 Install SIMD FIR filter DSP library"
+-
+-HOST_ARCH=$(uname -m)
+-if [ "$HOST_ARCH" = "x86_64" ]; then
+-    echo "X86 64 platform."
+-elif [ "$HOST_ARCH" = "armv7l" ]; then
+-    git clone https://github.com/projectNe10/Ne10
+-    cd Ne10
+-    mkdir build
+-    cd build
+-    export NE10_LINUX_TARGET_ARCH=armv7 
+-    cmake -DGNULINUX_PLATFORM=ON ..     
+-    make
+-    cp modules/libNE10.a ../../heimdall_daq_fw/Firmware/_daq_core
+-    cd ..
+-    cd ..    
++#!/usr/bin/env bash
++set -e
++
++echo "Installing dependencies and building Heimdall DAQ Firmware"
++
++# Resolve project root
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++PROJECT_ROOT="$SCRIPT_DIR/.."
++cd "$PROJECT_ROOT"
++
++# 6/1 RTL-SDR deps (system packages)
++echo "6/1 Installing RTL-SDR build dependencies"
++sudo apt update
++sudo apt install -y \
++  git cmake libusb-1.0-0-dev lsof \
++  rtl-sdr librtlsdr0 librtlsdr-dev
++
++# 6/2 Build KrakenRF-patched librtlsdr (static only)
++echo "6/2 Building KrakenRF-patched librtlsdr (static archive)"
++rm -rf kraken-librtlsdr
++git clone --depth 1 https://github.com/krakenrf/librtlsdr kraken-librtlsdr
++cd kraken-librtlsdr
++mkdir -p build && cd build
++cmake ../ \
++  -DBUILD_SHARED_LIBS=OFF \
++  -DINSTALL_UDEV_RULES=OFF
++make -j$(nproc)
++
++echo "→ Installing patched librtlsdr.a and headers into DAQ core"
++# Copy the static archive under the proper name for -lrtlsdr
++cp src/librtlsdr.a \
++   "$PROJECT_ROOT/Firmware/_daq_core/librtlsdr.a"
++# Copy all headers so the DAQ code sees the new prototypes
++for hdr in ../include/*.h; do
++    cp "$hdr" "$PROJECT_ROOT/Firmware/_daq_core/"
++done
++
++cd "$PROJECT_ROOT"
++
++# Patch the DAQ Makefile to force it to pick our local librtlsdr.a
++echo "→ Patching DAQ core Makefile for static librtlsdr"
++sed -i \
++  's|\(-L\.\s*-\)lrtlsdr|\1Wl,-Bstatic -lrtlsdr -Wl,-Bdynamic|' \
++  "$PROJECT_ROOT/Firmware/_daq_core/Makefile"
++
++# 6/3 Blacklist stock DVB-USB driver
++echo "6/3 Blacklisting dvb_usb_rtl28xxu"
++echo 'blacklist dvb_usb_rtl28xxu' | sudo tee /etc/modprobe.d/blacklist-dvb_usb_rtl28xxu.conf
++
++# 6/4 Install or copy NE10 (for SIMD FIR)
++echo "6/4 Installing or copying NE10 DSP library"
++HOST_ARCH="$(uname -m)"
++if [ "$HOST_ARCH" = "armv7l" ]; then
++  echo "  armv7l: building NE10 from source"
++  rm -rf ne10-src
++  git clone --depth 1 https://github.com/projectNe10/Ne10 ne10-src
++  cd ne10-src/build
++  export NE10_LINUX_TARGET_ARCH=armv7
++  cmake -DGNULINUX_PLATFORM=ON ..
++  make -j$(nproc)
++  sudo cp modules/libNE10.a "$PROJECT_ROOT/Firmware/_daq_core/"
++  cd "$PROJECT_ROOT"
++elif [ "$HOST_ARCH" = "aarch64" ]; then
++  echo "  aarch64: copying system NE10"
++  sudo cp /usr/lib/aarch64-linux-gnu/libNE10.a "$PROJECT_ROOT/Firmware/_daq_core/"
+ else
+-    echo "Architecture not recognized!"
+-    exit
++  echo "  $HOST_ARCH: assuming system NE10 or skipping"
+ fi
+-echo "6/5 Install the required python3 packages"
+-sudo apt install python3-pip
+-sudo python3 -m pip install numpy
+-sudo python3 -m pip install configparser
+-sudo apt-get install libatlas-base-dev gfortran
+-sudo python3 -m pip install scipy
+-sudo python3 -m pip install pyzmq
+-sudo python3 -m pip install scikit-rf
+-# For testing
+-sudo python3 -m pip install plotly
+-
+-
+-sudo apt install libzmq3-dev -y
+-echo "6/6 Build HeIMDALL DAQ Firmware"
+-cd heimdall_daq_fw/Firmware/_daq_core
++
++# 6/5 Python dependencies
++echo "6/5 Installing Python3 packages"
++sudo apt install -y python3-pip libatlas-base-dev gfortran
++pip3 install --upgrade pip
++pip3 install numpy scipy pyzmq scikit-rf plotly configparser
++
++# 6/6 Build Heimdall DAQ core firmware
++echo "6/6 Building Heimdall DAQ core"
++cd "$PROJECT_ROOT/Firmware/_daq_core"
++make clean
+ make
++cd "$PROJECT_ROOT"
+ 
+-# TODO: Check installed versions:
+-# Scipy: 1.8 or later
+\ No newline at end of file
++echo "✅ Done! Now start Heimdall with:"
++echo "   cd Firmware && sudo ./daq_start_sm.sh"
